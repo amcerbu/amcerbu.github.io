@@ -1,4 +1,4 @@
-size = 32;
+size = 20;
 
 orientation = 0;
 
@@ -15,12 +15,14 @@ pieceShapes[pieceTypes.J] = [ [[-1,0],[1,0],[1,1]], [[1,-1],[0,-1],[0,1]], [[-1,
 
 class Board
 {
-	constructor(width = 10, height = 20, pad = 1)
+	constructor(width = 12, height = 20, pad = 1)
 	{
+		// width and height refer to the size of the _playing area_
 		this.width = width;
 		this.height = height;
 		this.pad = pad;
 		this.data = []
+
 		for(var i = 0; i < width + 2 * pad; i++)
 		{
 			this.data[i] = []
@@ -78,22 +80,23 @@ class Board
 		while(working)
 		{
 			working = false;
-			for (var j = this.pad; j < this.height; j++)
+			for (var j = this.pad; j < this.height + this.pad; j++)
 			{
 				var filled = true;
-				for (var i = this.pad; i < this.width; i++)
+				for (var i = this.pad; i < this.width + this.pad; i++)
 				{
 					if(this.data[i][j] == pieceTypes.Air)
 					{
 						filled = false;
 					}
 				}
+
 				if(filled)
 				{
 					working = true;
 					for(var k = j; k >= this.pad; k--)
 					{
-						for (var i = this.pad; i < this.width - this.pad; i++)
+						for (var i = this.pad; i < this.width + this.pad; i++)
 						{
 							if(k > this.pad)
 							{
@@ -110,62 +113,105 @@ class Board
 		}
 	}
 
+	clone()
+	{
+		var newBoard = new Board(this.width, this.height, this.pad);
+		for (var i = 0; i < this.width + 2 * this.pad; i++)
+		{
+			for (var j = 0; j < this.height + 2 * this.pad; j++)
+			{
+				newBoard.data[i][j] = this.data[i][j];
+			}
+		}
+
+		return newBoard;
+	}
+
 	fitness()
 	{
 		var irregularity = 0;
 		var caves = 0;
+		var caveTop = this.height;
+		var wells = 0;
+		var avg = 0;
+		var peak = 0;
 
 		var tops = []
-		for (var i = 0; i < this.width; i++)
+		for (var i = this.pad; i < this.width + this.pad; i++)
 		{
 			var searching = true;
-			var j = 0;
+			var j = this.pad;
 			while(searching)
 			{
-				if(this.data[i + this.pad][j + this.pad] !== pieceTypes.Air)
+				if(this.data[i][j] !== pieceTypes.Air)
 				{
-					j--;
 					searching = false;
-					tops.push(j + this.pad);
+					tops.push(this.pad + this.height - j);
+					j--;
 				}
 				j++;
 			}
 		}
 
-		for (var i = 0; i < tops.length - 1; i++)
+		for (var i = 0; i < tops.length; i++)
 		{
-			irregularity += Math.pow((tops[i+1] - tops[i]), 2);
+			avg += tops[i] / this.width;
+			peak = Math.max(peak, tops[i])
 		}
 
-		// for (var i = 0; i < this.width; i++)
-		// {
-		// 	for (var j = this.height + this.pad - 1; j > tops[i]; j++)
-		// 	{
-		// 		if(this.data[i + this.pad][j + this.pad] === pieceTypes.Air)
-		// 		{
-		// 			caves += j;
-		// 		}
-		// 	}
-		// }
+		for (var i = 0; i < tops.length - 1; i++)
+			irregularity += Math.pow(tops[i+1] - tops[i], 2);
+		irregularity = Math.sqrt(irregularity);
 
-		return irregularity + caves;
+		for (var i = 0; i < tops.length - 2; i++)
+			if(tops[i] - tops[i+1] >= 2 && tops[i+2] - tops[i+1] >= 2)
+				wells += Math.pow(tops[i+1] - tops[i], 2) + Math.pow(tops[i+2] - tops[i+1], 2);
+
+		if(tops[1] - tops[0] >= 2)
+			wells += Math.pow((tops[1] - tops[0]), 4);
+		if(tops[-2] - tops[-1] >= 2)
+			wells += Math.pow((tops[-2] - tops[-1]), 4);
+		wells = Math.sqrt(wells);
+
+		for (var i = this.pad; i < this.width + this.pad; i++)
+		{
+			var filled = 0;
+			for (var j = 0; j < tops[i - this.pad]; j++)
+			{
+				if(this.data[i][this.height + this.pad - j] !== pieceTypes.Air)
+				{
+					filled++;
+				}
+				else
+				{
+					caveTop = max(caveTop, tops[i - this.pad]);
+				}
+			}
+			caves += (tops[i - this.pad] - filled) ;
+		}
+
+		// return height + irregularity + tunnels + 100 * caves + 100 * peak;
+		return 100 * caves +  irregularity + 10 * wells + 0 * peak;
 	}
 }
 
 class Piece
 {
+	// static states = { falling : 0, resting : 1, locked : 2, printed : 3}
+
 	constructor(type, orientation)
 	{
 		this.type = type;
 		this.orientation = orientation;
 		this.orientations = pieceShapes[this.type].length
+		// this.state = states.falling;
 		this.made = false;
 	}
 
 	attach(board)
 	{
 		this.board = board;
-		this.x = 3 + this.board.pad;
+		this.x = 4 + this.board.pad;
 		this.y = this.board.pad;
 		this.shadowX = this.x;
 		this.shadowY = this.y;
@@ -283,24 +329,26 @@ class Piece
 		var fitness = -1;
 		for (var orientation = 0; orientation < pieceShapes[this.type].length; orientation++)
 		{
-			for (var x = 0; x < this.board.width; x++)
+			for (var x = this.board.pad; x < this.board.width + this.board.pad; x++)
 			{
-				var testBoard = clone(board);
-				piece = new Piece(this.type, orientation);
-				piece.attach(testBoard);
-				piece.x = x + piece.board.pad;
-				if(!piece.collision())
+				var testBoard = this.board.clone();
+				var testPiece = new Piece(this.type, orientation);
+				testPiece.attach(testBoard);
+				testPiece.y++;
+				testPiece.x = x;
+				if(!testPiece.collision())
 				{
-					piece.shadow();
-					piece.hard();
-					piece.print();
+					testPiece.shadow();
+					testPiece.hard();
+					testPiece.print();
+					testBoard.clear();
 
 					var testFitness = testBoard.fitness();
 					if(fitness < 0 || testFitness < fitness)
 					{
-						piece.y = this.board.pad + 1;
-						piece.made = false;
-						bestPiece = clone(piece)
+						bestPiece.orientation = orientation;
+						bestPiece.x = testPiece.x;
+						bestPiece.y = this.board.pad;
 						fitness = testFitness;
 					}
 				}
@@ -310,16 +358,6 @@ class Piece
 		return bestPiece;
 	}
 }
-
-function clone(obj) {
-    if (null == obj || "object" != typeof obj) return obj;
-    var copy = new obj.constructor(0,0);
-    for (var attr in obj) {
-        if (obj.hasOwnProperty(attr)) copy[attr] = obj[attr];
-    }
-    return copy;
-}
-
 
 class Press
 {
@@ -386,9 +424,9 @@ function drawBlock(type, x, y, size)
 {
 	x *= size;
 	y *= size;
-	r = 0;
-	g = 0;
-	b = 0;
+	var r = 0;
+	var g = 0;
+	var b = 0;
 	
 	switch(type)
 	{
@@ -427,6 +465,7 @@ function drawBlock(type, x, y, size)
 var now = 0;
 var lastAdvance = 0;
 var lastDraw = 0;
+var count = 0;
 
 // 
 // ––––––––––––––––––––––––––––––––––– p5 callbacks
@@ -434,24 +473,33 @@ var lastDraw = 0;
 
 function setup()
 {
-	createCanvas(size * 12,size * 22);
+	createCanvas(size * (board.width + 2 * board.pad),size * (board.height + 2 * board.pad));
 	frameRate(1000);
+}
+
+function frame()
+{
+	Up.update();
+	Down.update();
+	Left.update();
+	Right.update();
+	board.print();
+	piece.make();
+}
+
+function advance()
+{
+	piece.advance();
 }
 
 function draw()
 {
 	now = Date.now();
 
-	if(now - lastDraw > 16)
-	{
-		Up.update();
-		Down.update();
-		Left.update();
-		Right.update();
-
-		board.print();
-		piece.make();
-	}
+	// if(now - lastDraw > 32)
+	// {
+	// 	frame();
+	// }
 
 
 	if(piece.made)
@@ -460,43 +508,36 @@ function draw()
 		piece = new Piece(int(7 * random()), 0);
 		piece.attach(board);
 		piece = piece.optimal();
-		piece.attach(board);
+		piece.board = board;
 		board.clear();
-		console.log(board.fitness())
 		Up.press = false;
 		Down.press = false;
 		Left.press = false;
 		Right.press = false;
 	}
-	if(now - lastAdvance > 300)
+
+	if(now - lastAdvance > 16)
 	{
-		piece.advance();
+		frame();
+		piece.hard();
+		count++;
 		lastAdvance = now;
 	}
 }
 
 function keyPressed()
 {
-	if (keyCode === UP_ARROW)
-		Up.press = true;
-	if (keyCode === DOWN_ARROW)
-		Down.press = true;
-	if (keyCode === RIGHT_ARROW)
-		Right.press = true;
-	if (keyCode === LEFT_ARROW)
-		Left.press = true;
-	if (key === ' ')
-		piece.hard()
+	if (keyCode === UP_ARROW) Up.press = true;
+	if (keyCode === DOWN_ARROW) Down.press = true;
+	if (keyCode === RIGHT_ARROW) Right.press = true;
+	if (keyCode === LEFT_ARROW) Left.press = true;
+	if (key === ' ') piece.hard()
 }
 
 function keyReleased()
 {
-	if (keyCode === UP_ARROW)
-		Up.press = false;
-	if (keyCode === DOWN_ARROW)
-		Down.press = false;
-	if (keyCode === RIGHT_ARROW)
-		Right.press = false;
-	if (keyCode === LEFT_ARROW)
-		Left.press = false;
+	if (keyCode === UP_ARROW) Up.press = false;
+	if (keyCode === DOWN_ARROW) Down.press = false;
+	if (keyCode === RIGHT_ARROW) Right.press = false;
+	if (keyCode === LEFT_ARROW) Left.press = false;
 }
