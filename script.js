@@ -63,9 +63,38 @@ class Board
 
 	print()
 	{
+		for (var i = this.pad; i < this.width + this.pad; i++)
+		{
+			for (var j = this.pad; j < this.height + this.pad; j++)
+			{
+				drawBlock(this.data[i][j], i, j, size);
+			}
+		}
+	}
+
+	border()
+	{
 		for (var i = 0; i < this.width + 2 * this.pad; i++)
 		{
-			for (var j = 0; j < this.height + 2 * this.pad; j++)
+			for (var j = 0; j < this.pad; j++)
+			{
+				drawBlock(this.data[i][j], i, j, size);
+			}
+
+			for (var j = this.height - this.pad; j < this.height + 2 * this.pad; j++)
+			{
+				drawBlock(this.data[i][j], i, j, size);
+			}
+		}
+
+		for (var j = this.pad; j < this.height + this.pad; j++)
+		{
+			for (var i = 0; i < this.pad; i++)
+			{
+				drawBlock(this.data[i][j], i, j, size);
+			}
+
+			for (var i = this.width - this.pad; i < this.width + 2 * this.pad; i++)
 			{
 				drawBlock(this.data[i][j], i, j, size);
 			}
@@ -451,6 +480,7 @@ function draw()
 
 		board.print();
 		piece.make();
+		board.border();
 	}
 
 
